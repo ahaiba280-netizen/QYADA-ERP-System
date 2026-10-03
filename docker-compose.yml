@@ -1,0 +1,23 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: qyada_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: qyada_erp
+      POSTGRES_USER: qyada
+      POSTGRES_PASSWORD: qyada123
+    ports:
+      - '5432:5432'
+    volumes:
+      - qyada_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U qyada -d qyada_erp']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  qyada_pgdata:

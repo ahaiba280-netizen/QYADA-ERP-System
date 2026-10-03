@@ -1,0 +1,289 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String   @id @default(uuid())
+  email          String   @unique
+  passwordHash   String
+  firstName      String
+  lastName       String
+  phone          String?
+  role           String   @default("USER")
+  isActive       Boolean  @default(true)
+  companyId      String?
+  branchId       String?
+  projectId      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  company        Company? @relation(fields: [companyId], references: [id])
+  branch         Branch?  @relation(fields: [branchId], references: [id])
+  project        Project? @relation(fields: [projectId], references: [id])
+  auditLogs      AuditLog[]
+  approvals      Approval[]
+  documents      Document[]
+  workOrders     WorkOrder[]
+
+  @@map("users")
+}
+
+model Company {
+  id          String   @id @default(uuid())
+  name        String
+  code        String   @unique
+  country     String   @default("UAE")
+  currency    String   @default("AED")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  branches    Branch[]
+  projects    Project[]
+  users       User[]
+  costCenters CostCenter[]
+  vendors     Vendor[]
+  contracts   Contract[]
+  documents   Document[]
+
+  @@map("companies")
+}
+
+model Branch {
+  id          String   @id @default(uuid())
+  name        String
+  code        String
+  companyId   String
+  city        String?
+  address     String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company     Company  @relation(fields: [companyId], references: [id])
+  projects    Project[]
+  users       User[]
+  costCenters CostCenter[]
+
+  @@map("branches")
+}
+
+model Project {
+  id                String   @id @default(uuid())
+  name              String
+  code              String   @unique
+  companyId         String
+  branchId          String?
+  projectManagerId  String?
+  status            String   @default("PLANNING")
+  budget            Float    @default(0)
+  contractValue     Float    @default(0)
+  currency          String   @default("AED")
+  startDate         DateTime?
+  endDate           DateTime?
+  progress          Float    @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  company          Company         @relation(fields: [companyId], references: [id])
+  branch           Branch?         @relation(fields: [branchId], references: [id])
+  users            User[]
+  projectLocations ProjectLocation[]
+  costCenters      CostCenter[]
+  boqItems         BOQItem[]
+  invoices         Invoice[]
+  workOrders       WorkOrder[]
+  approvals        Approval[]
+  documents        Document[]
+  risks            Risk[]
+
+  @@map("projects")
+}
+
+model ProjectLocation {
+  id        String   @id @default(uuid())
+  projectId  String
+  name      String
+  address   String?
+  city      String?
+  createdAt DateTime @default(now())
+
+  project   Project @relation(fields: [projectId], references: [id])
+
+  @@map("project_locations")
+}
+
+model Department {
+  id        String   @id @default(uuid())
+  name      String
+  code      String   @unique
+  parentId  String?
+  createdAt DateTime @default(now())
+
+  @@map("departments")
+}
+
+model CostCenter {
+  id         String   @id @default(uuid())
+  name       String
+  code       String   @unique
+  companyId  String
+  branchId   String?
+  projectId  String?
+  type       String   @default("OPERATIONS")
+  createdAt  DateTime @default(now())
+
+  company    Company  @relation(fields: [companyId], references: [id])
+  branch     Branch?  @relation(fields: [branchId], references: [id])
+  project    Project? @relation(fields: [projectId], references: [id])
+
+  @@map("cost_centers")
+}
+
+model Vendor {
+  id           String   @id @default(uuid())
+  companyId    String
+  name         String
+  legalName    String?
+  taxNumber    String?
+  email        String?
+  phone        String?
+  category     String?
+  isActive     Boolean @default(true)
+  createdAt    DateTime @default(now())
+
+  company      Company @relation(fields: [companyId], references: [id])
+
+  @@map("vendors")
+}
+
+model Contract {
+  id               String   @id @default(uuid())
+  companyId        String
+  projectId        String?
+  title            String
+  contractNumber   String
+  type             String
+  status           String   @default("DRAFT")
+  value            Float    @default(0)
+  startDate        DateTime?
+  endDate          DateTime?
+  createdAt        DateTime @default(now())
+
+  company          Company @relation(fields: [companyId], references: [id])
+
+  @@map("contracts")
+}
+
+model BOQItem {
+  id          String   @id @default(uuid())
+  projectId   String
+  code        String
+  description String
+  unit        String
+  quantity    Float    @default(0)
+  unitRate    Float    @default(0)
+  amount      Float    @default(0)
+  createdAt   DateTime @default(now())
+
+  project     Project @relation(fields: [projectId], references: [id])
+
+  @@map("boq_items")
+}
+
+model Invoice {
+  id          String   @id @default(uuid())
+  projectId   String
+  number      String
+  type        String
+  amount      Float
+  status      String   @default("DRAFT")
+  issuedAt    DateTime?
+  dueDate     DateTime?
+  createdAt   DateTime @default(now())
+
+  project     Project @relation(fields: [projectId], references: [id])
+
+  @@map("invoices")
+}
+
+model WorkOrder {
+  id           String   @id @default(uuid())
+  projectId    String
+  code         String
+  title        String
+  status       String   @default("OPEN")
+  priority     String   @default("MEDIUM")
+  assigneeId   String?
+  createdAt    DateTime @default(now())
+
+  project      Project @relation(fields: [projectId], references: [id])
+  assignee     User?   @relation(fields: [assigneeId], references: [id])
+
+  @@map("work_orders")
+}
+
+model Approval {
+  id          String   @id @default(uuid())
+  projectId   String?
+  userId      String?
+  module      String
+  subject     String
+  status      String   @default("PENDING")
+  createdAt   DateTime @default(now())
+
+  project     Project? @relation(fields: [projectId], references: [id])
+  user        User?    @relation(fields: [userId], references: [id])
+
+  @@map("approvals")
+}
+
+model Document {
+  id          String   @id @default(uuid())
+  companyId   String?
+  projectId   String?
+  userId      String?
+  title       String
+  category    String?
+  fileName    String?
+  url         String?
+  version     String   @default("1.0")
+  createdAt   DateTime @default(now())
+
+  company     Company? @relation(fields: [companyId], references: [id])
+  project     Project? @relation(fields: [projectId], references: [id])
+  user        User?    @relation(fields: [userId], references: [id])
+
+  @@map("documents")
+}
+
+model Risk {
+  id          String   @id @default(uuid())
+  projectId   String
+  title       String
+  severity    String
+  status      String   @default("OPEN")
+  createdAt   DateTime @default(now())
+
+  project     Project @relation(fields: [projectId], references: [id])
+
+  @@map("risks")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  entity      String
+  action      String
+  details     String?
+  createdAt   DateTime @default(now())
+
+  user        User? @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
