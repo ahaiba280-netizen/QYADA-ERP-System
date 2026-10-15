@@ -1,3 +1,6 @@
+// Extended Prisma schema for QYADA ERP - expanded enterprise models
+// Replaces previous schema with full ERP entities: Finance, Procurement, Inventory, HR, Assets, Fleet, Maintenance, Workflows, RBAC, Integrations
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -14,21 +17,24 @@ model User {
   firstName      String
   lastName       String
   phone          String?
-  role           String   @default("USER")
   isActive       Boolean  @default(true)
-  companyId      String?
-  branchId       String?
-  projectId      String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  company        Company? @relation(fields: [companyId], references: [id])
-  branch         Branch?  @relation(fields: [branchId], references: [id])
-  project        Project? @relation(fields: [projectId], references: [id])
+  // tenancy context
+  companyId      String?
+  branchId       String?
+  projectId      String?
+
+  // RBAC relations
+  userRoles      UserRole[]
+
+  // domain relations
   auditLogs      AuditLog[]
   approvals      Approval[]
   documents      Document[]
   workOrders     WorkOrder[]
+  timesheets     Timesheet[]
 
   @@map("users")
 }
@@ -51,14 +57,16 @@ model Company {
   contracts   Contract[]
   documents   Document[]
 
+  integrations IntegrationLog[]
+
   @@map("companies")
 }
 
 model Branch {
   id          String   @id @default(uuid())
+  companyId   String
   name        String
   code        String
-  companyId   String
   city        String?
   address     String?
   isActive    Boolean  @default(true)
@@ -93,7 +101,7 @@ model Project {
   company          Company         @relation(fields: [companyId], references: [id])
   branch           Branch?         @relation(fields: [branchId], references: [id])
   users            User[]
-  projectLocations ProjectLocation[]
+  locations        ProjectLocation[]
   costCenters      CostCenter[]
   boqItems         BOQItem[]
   invoices         Invoice[]
@@ -101,6 +109,7 @@ model Project {
   approvals        Approval[]
   documents        Document[]
   risks            Risk[]
+  timesheets       Timesheet[]
 
   @@map("projects")
 }
@@ -120,6 +129,7 @@ model ProjectLocation {
 
 model Department {
   id        String   @id @default(uuid())
+  companyId String?
   name      String
   code      String   @unique
   parentId  String?
@@ -154,10 +164,12 @@ model Vendor {
   email        String?
   phone        String?
   category     String?
+  currency     String   @default("AED")
   isActive     Boolean @default(true)
   createdAt    DateTime @default(now())
 
   company      Company @relation(fields: [companyId], references: [id])
+  purchaseOrders PurchaseOrder[]
 
   @@map("vendors")
 }
@@ -235,12 +247,32 @@ model Approval {
   module      String
   subject     String
   status      String   @default("PENDING")
+  payload     String?
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   project     Project? @relation(fields: [projectId], references: [id])
   user        User?    @relation(fields: [userId], references: [id])
 
+  steps       ApprovalStep[]
+
   @@map("approvals")
+}
+
+model ApprovalStep {
+  id          String   @id @default(uuid())
+  approvalId  String
+  approverId  String?
+  role        String?
+  order       Int      @default(1)
+  status      String   @default("PENDING")
+  comment     String?
+  actedAt     DateTime?
+
+  approval    Approval @relation(fields: [approvalId], references: [id])
+  approver    User?    @relation(fields: [approverId], references: [id])
+
+  @@map("approval_steps")
 }
 
 model Document {
@@ -253,6 +285,7 @@ model Document {
   fileName    String?
   url         String?
   version     String   @default("1.0")
+  metadata    Json?
   createdAt   DateTime @default(now())
 
   company     Company? @relation(fields: [companyId], references: [id])
@@ -266,6 +299,7 @@ model Risk {
   id          String   @id @default(uuid())
   projectId   String
   title       String
+  description String?
   severity    String
   status      String   @default("OPEN")
   createdAt   DateTime @default(now())
@@ -278,12 +312,354 @@ model Risk {
 model AuditLog {
   id          String   @id @default(uuid())
   userId      String?
+  tenantId    String?
   entity      String
   action      String
-  details     String?
+  details     Json?
   createdAt   DateTime @default(now())
 
   user        User? @relation(fields: [userId], references: [id])
 
   @@map("audit_logs")
+}
+
+// Finance models
+model LedgerAccount {
+  id        String @id @default(uuid())
+  companyId String
+  code      String @unique
+  name      String
+  type      String
+  balance   Float  @default(0)
+  createdAt DateTime @default(now())
+
+  company   Company @relation(fields: [companyId], references: [id])
+  entries   JournalEntry[]
+
+  @@map("ledger_accounts")
+}
+
+model JournalEntry {
+  id          String   @id @default(uuid())
+  companyId   String
+  date        DateTime
+  description String?
+  reference   String?
+  createdAt   DateTime @default(now())
+
+  lines       JournalLine[]
+  company     Company @relation(fields: [companyId], references: [id])
+
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id            String  @id @default(uuid())
+  journalId     String
+  accountId     String
+  debit         Float   @default(0)
+  credit        Float   @default(0)
+  costCenterId  String?
+
+  journal       JournalEntry @relation(fields: [journalId], references: [id])
+  account       LedgerAccount @relation(fields: [accountId], references: [id])
+
+  @@map("journal_lines")
+}
+
+model Payment {
+  id          String @id @default(uuid())
+  companyId   String
+  vendorId    String?
+  amount      Float
+  currency    String @default("AED")
+  method      String
+  status      String @default("PENDING")
+  appliedAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  company     Company @relation(fields: [companyId], references: [id])
+  vendor      Vendor? @relation(fields: [vendorId], references: [id])
+
+  @@map("payments")
+}
+
+// Procurement
+model PurchaseOrder {
+  id          String @id @default(uuid())
+  companyId   String
+  vendorId    String
+  number      String
+  status      String @default("DRAFT")
+  total       Float  @default(0)
+  currency    String @default("AED")
+  createdAt   DateTime @default(now())
+
+  company     Company @relation(fields: [companyId], references: [id])
+  vendor      Vendor  @relation(fields: [vendorId], references: [id])
+  items       POItem[]
+
+  @@map("purchase_orders")
+}
+
+model POItem {
+  id          String  @id @default(uuid())
+  poId        String
+  description String
+  unit        String
+  qty         Float   @default(0)
+  unitPrice   Float   @default(0)
+  amount      Float   @default(0)
+
+  po          PurchaseOrder @relation(fields: [poId], references: [id])
+
+  @@map("po_items")
+}
+
+model GRN {
+  id          String @id @default(uuid())
+  poId        String?
+  number      String
+  warehouseId String?
+  receivedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  items       GRNItem[]
+
+  @@map("grns")
+}
+
+model GRNItem {
+  id        String @id @default(uuid())
+  grnId     String
+  description String
+  qty       Float @default(0)
+  unit      String
+
+  grn       GRN @relation(fields: [grnId], references: [id])
+
+  @@map("grn_items")
+}
+
+// Inventory
+model Warehouse {
+  id        String @id @default(uuid())
+  companyId String
+  name      String
+  code      String @unique
+  address   String?
+  createdAt DateTime @default(now())
+
+  company   Company @relation(fields: [companyId], references: [id])
+  movements StockMovement[]
+
+  @@map("warehouses")
+}
+
+model StockMovement {
+  id           String @id @default(uuid())
+  companyId    String
+  warehouseFrom String?
+  warehouseTo   String?
+  type         String
+  reference    String?
+  createdAt    DateTime @default(now())
+
+  items        StockMovementItem[]
+
+  @@map("stock_movements")
+}
+
+model StockMovementItem {
+  id          String @id @default(uuid())
+  movementId  String
+  description String
+  qty         Float @default(0)
+  unit        String
+
+  movement    StockMovement @relation(fields: [movementId], references: [id])
+
+  @@map("stock_movement_items")
+}
+
+// HR & Payroll
+model Employee {
+  id          String @id @default(uuid())
+  companyId   String
+  employeeNo  String @unique
+  firstName   String
+  lastName    String
+  email       String?
+  phone       String?
+  jobTitle    String?
+  departmentId String?
+  hireDate    DateTime?
+  createdAt   DateTime @default(now())
+
+  company     Company @relation(fields: [companyId], references: [id])
+  attendance  Attendance[]
+  payrolls    Payroll[]
+
+  @@map("employees")
+}
+
+model Attendance {
+  id         String @id @default(uuid())
+  employeeId String
+  date       DateTime
+  checkIn    DateTime?
+  checkOut   DateTime?
+  createdAt  DateTime @default(now())
+
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("attendances")
+}
+
+model Payroll {
+  id          String @id @default(uuid())
+  employeeId  String
+  periodStart DateTime
+  periodEnd   DateTime
+  gross       Float
+  deductions  Float
+  netPay      Float
+  createdAt   DateTime @default(now())
+
+  employee    Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("payrolls")
+}
+
+model Timesheet {
+  id         String @id @default(uuid())
+  projectId  String
+  userId     String
+  date       DateTime
+  hours      Float
+  activity   String?
+  createdAt  DateTime @default(now())
+
+  project    Project @relation(fields: [projectId], references: [id])
+  user       User @relation(fields: [userId], references: [id])
+
+  @@map("timesheets")
+}
+
+// Assets & Fleet
+model Equipment {
+  id          String @id @default(uuid())
+  companyId   String
+  tag         String @unique
+  name        String
+  category    String
+  status      String @default("ACTIVE")
+  location    String?
+  createdAt   DateTime @default(now())
+
+  company     Company @relation(fields: [companyId], references: [id])
+  maintenances Maintenance[]
+
+  @@map("equipment")
+}
+
+model Vehicle {
+  id          String @id @default(uuid())
+  companyId   String
+  plateNo     String @unique
+  model       String?
+  status      String @default("ACTIVE")
+  createdAt   DateTime @default(now())
+
+  company     Company @relation(fields: [companyId], references: [id])
+
+  @@map("vehicles")
+}
+
+model Maintenance {
+  id           String @id @default(uuid())
+  equipmentId  String
+  title        String
+  type         String
+  scheduledAt  DateTime?
+  performedAt  DateTime?
+  status       String @default("SCHEDULED")
+  createdAt    DateTime @default(now())
+
+  equipment    Equipment @relation(fields: [equipmentId], references: [id])
+
+  @@map("maintenances")
+}
+
+// Integrations & Audit
+model IntegrationLog {
+  id          String @id @default(uuid())
+  companyId   String?
+  system      String
+  direction   String
+  payload     Json?
+  status      String @default("PENDING")
+  createdAt   DateTime @default(now())
+
+  company     Company? @relation(fields: [companyId], references: [id])
+
+  @@map("integration_logs")
+}
+
+// Workflows & RBAC
+model Workflow {
+  id          String @id @default(uuid())
+  name        String
+  module      String
+  definition  Json
+  isActive    Boolean @default(true)
+  createdAt   DateTime @default(now())
+
+  @@map("workflows")
+}
+
+model Role {
+  id          String @id @default(uuid())
+  name        String @unique
+  description String?
+  createdAt   DateTime @default(now())
+
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String @id @default(uuid())
+  name        String @unique
+  description String?
+  createdAt   DateTime @default(now())
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String @id @default(uuid())
+  roleId       String
+  permissionId String
+
+  role         Role @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@map("role_permissions")
+}
+
+model UserRole {
+  id      String @id @default(uuid())
+  userId  String
+  roleId  String
+  scope   String? // e.g., company:COMPANY_ID, project:PROJECT_ID
+
+  user    User @relation(fields: [userId], references: [id])
+  role    Role @relation(fields: [roleId], references: [id])
+
+  @@map("user_roles")
 }
